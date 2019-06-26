@@ -2,24 +2,23 @@ import cv2
 from collections import deque
 import imutils
 import numpy as np
-import math
+import pytesseract
 
-def eucdist(a,b):
-    x1=a[0]
-    y1=a[1]
-    x2=b[0]
-    y2=b[1]
-    dist=math.sqrt( ((x2-x1)**2) + ((y2-y1)**2) )
-    return dist
+from reqd_functions import findROI,eucdist
+
+
 
 cap=cv2.VideoCapture(0)
 pts=deque(maxlen=256)
 counter=0
+nocnt_frames=0
+bufclean=True
 
 sensitivity=15
 lower_color=(100,75, 50)
 upper_color=(110, 255, 255)
 
+alphalist=['A']
 
 j=0
 
@@ -42,40 +41,65 @@ while True:
     center = None
     
     if len(cnts)>0:
+        nocnt_frames=0
+        bufclean=False
         c = max(cnts, key=cv2.contourArea)
         ((x,y),radius)=cv2.minEnclosingCircle(c)
         M=cv2.moments(c)
         center=((int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"])))
         
-        cv2.circle(frame,center, 5, (0,0,255), -1)
         pts.appendleft(center)
         
         for i in np.arange(1, len(pts)):
             if pts[i-1] is None or pts[i] is None:
                 continue
             
-            cv2.line(frame, pts[i - 1], pts[i], (0, 0, 255), 2)
+            cv2.line(frame, pts[i - 1], pts[i], (255, 255, 255), 15)
 
-        if (counter>30):
-            avg=eucdist(pts[0],pts[30])
+        if (counter>50):
+            avg=eucdist(pts[0],pts[50])
             if avg<4:
-                alpha=np.zeros((480,640,3))
+                alpha=np.zeros((640,640,3),dtype='uint8')
                 for i in np.arange(1, len(pts)):
-                    alpha=cv2.line(alpha, pts[i - 1], pts[i], (0, 0, 255), 2)
+                    cv2.line(alpha, pts[i - 1], pts[i], (255, 255, 255), 15)
                 
                 filename="SaveFile"+str(j)+".png"
-                cv2.imwrite((filename),alpha)
+                roi=findROI(alpha)
+                roi=cv2.bitwise_not(roi)
+                
+                text=pytesseract.image_to_string(roi,config='-l eng --oem 0 --psm 10 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ<')
+                if text=='<':
+                    alphalist.pop()
+                    print("Deleted")
+                else:
+                    alphalist.append(text)
+                
                 j+=1
                 pts.clear()
                 counter=0
                 center=None
-                print("Saved: "+filename)
+                print("Detected")
+                
+        cv2.circle(frame,center, 5, (0,0,255),8)
         counter+=1
-            
-            
     
+    if len(cnts)==0:
+        if not bufclean:
+            nocnt_frames+=1
+            if nocnt_frames>40:
+                pts.clear()
+                counter=0
+                center=None
+                nocnt_frames=0
+                bufclean=True
+                print("Cleared buffer")
+
+    dispim=np.hstack((frame, cv2.cvtColor(mask,cv2.COLOR_GRAY2BGR)))
     
-    cv2.imshow('frame',frame)
+    alphabet="".join(alphalist)
+    cv2.putText(dispim, alphabet, (650, 80), cv2.FONT_HERSHEY_SIMPLEX, 2.0, (255, 255, 255),3, lineType=cv2.LINE_AA)
+    
+    cv2.imshow('frame',dispim)
     if cv2.waitKey(1) & 0xFF==ord('q'):
         break
 
