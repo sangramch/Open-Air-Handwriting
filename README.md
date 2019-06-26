@@ -1,2 +1,2 @@
-# open-air-handwriting
-Handwriting Detection via Camera (Write in open air) 
+# Open-Air-Handwriting
+Write in Open Air (Handwriting Recognition through Camera)
